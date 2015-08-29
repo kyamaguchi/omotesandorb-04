@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
 
-  <title>capstrano3移行に失敗した話 #omotesandorb</title>
+  <title>謎のトラブルでcapstrano3移行に失敗した話 #omotesandorb</title>
 
   <meta name="description" content="A framework for easily creating beautiful presentations using HTML">
   <meta name="author" content="Hakim El Hattab">
@@ -57,13 +57,197 @@
   <div class="slides">
     <section data-markdown data-separator="^\n---$" data-separator-vertical="^\n- - -$">
       <script type="text/template">
-# capstrano3移行に失敗した話 #omotesandorb
+# 謎のトラブルでcapstrano3移行に失敗した話 #omotesandorb
 sue445
 
 2015/09/03 表参道.rb #4
 
 ---
 ## 自己紹介
+[![sue445](img/sue445.png)](https://twitter.com/sue445)
+
+* [sue445](https://twitter.com/sue445)
+* [株式会社ドリコム](http://www.drecom.co.jp/) 所属
+* サーバサイド全般の雑用
+  * インフラ、アプリ、ライブラリ、社内ツールetc
+* 鉄砲玉なのでこの会社で一番最初にcap3の人柱になった（2013年末くらい？）
+* TDDおじさん
+* プリキュアおじさん
+
+---
+## 【今期の嫁】キュアトゥインクル
+![cure_twinkle](img/cure_twinkle.png)
+
+---
+## 【本妻】キュアピース
+![cure_peace](img/cure_peace.jpg)
+
+---
+## Agenda
+* まとめ
+* 前置き
+* cap2でつらかったこと
+* cap3に移行した時の手順
+* 本番リリース時に起こったトラブル
+* 【おまけ】先週起こった恐い話
+
+---
+## まとめ
+* 頑張ってcap2からcap3に移行したけど本番で謎エラーが出てcap2に戻した
+
+---
+## 前置き
+* とあるアプリ(iOSとAndroidで公開されているソーシャルゲーム)でエンジニアの人数が足らなくてすけっとに入った
+* Ruby 2.2.2, Rails 4.0.6
+* テストが1年以上更新されていなかった
+  * 動かない状態から、rspec3にアップグレードして動くレベルまで直した（500個近いテストをpending）
+  * 新しいコードに関しては僕がテストコードを書いていったら他のエンジニアもテストを書くようになった（今回唯一のいいはなし）
+* そんなアプリで僕に与えられた最初のミッションがcap2から3へのアップデート
+
+---
+## cap2でつらかったこと
+* cap2がそもそもメンテされてない
+* capistrano-drecom-deploy や capistrano-drecom-sidekiq(社内gem)がcap3前提なのでcap2だと社内gemの恩恵を受けられない
+ * capistrano-drecom-deploy はnginx, unicorn 系のRailsアプリでよくある便利taskが揃ってる
+ * `drecom:unicorn:setup` で `/etc/init.d/unicorn-appname` を生成してサーバにアップロードする
+
+- - -
+## cap3に移行した時の手順
+
+* config/にあった既存のcap2タスクをconfig_old/ に移動
+* Capfileを削除してcap3にアップデートして `cap init`
+* cap3検証用のサーバを構築
+  * OpenStackの既存のサーバのスナップショットを作ってコピー
+* capistrano-drecom-deployを適用（1日）
+* その他のタスクをcap3に地道に移行（1〜2週間）
+
+- - -
+### 既存の開発サーバ
+* cap deploy
+  * 本番と同じロケーションにある開発サーバからgit cloneした時に7GBあるリポジトリのgit cloneが15分だったので本番はそれ以上かからないだろうと予想
+  * メンテ時間を短縮するために予め1台ずつgit cloneしておくことに（後述）
+* その他initスクリプト系をcapistrano-drecom-deployに追従
+
+---
+## 【小ネタ】cap3で予めcap deploy前にgit cloneしておく方法
+* `cap deploy` 時に `git clone` されるので、普通にやるとリポジトリがでかいとcloneに時間が掛かるので可能ならメンテ入れる前にgit cloneだけはしたかった
+* v3.3.4くらいで動作確認
+
+- - -
+### 手順
+Capfileに下記を追加
+
+```ruby
+require "capistrano/git"
+```
+
+* git cloneだけするコマンドはcapistranoに存在するのだが個別に使うためには `capistrano/git` を `require` しておかないと使えない
+
+- - -
+### コマンド
+
+```sh
+bundle exec cap xxxx git:update HOSTS=xxx.xxx.xxx.xxx
+```
+
+* `cap git:clone` だと `git clone` するだけだけど、`cap git:update` だとリポジトリがない場合には `git clone` してリポジトリがある場合には `git fetch` してくれるので冪等性があるのがよい
+* HOSTSをつけることでそのhostだけにcapコマンドを実行できるのでwebサーバ1台ずつ作業したいとかには使える
+  * 実は前方一致なので `HOSTS=xx.yy.zz.0` って書くと `xx.yy.zz.01` 〜 `xx.yy.zz.09` に対して実行される
+  * 一歩間違えるとサーバ1台ずつ実行するつもりがサーバ全台でcap実行という恐いことになる
+
+---
+## 当時のメンテスケジュール
+* 9:30頃：メンテインする前に1台ずつgit clone
+  * web x 14, admin x 1, job x 2
+  * 1台15分としたらメンテインまでにギリギリ終わる計算
+* 13:00頃：メンテイン
+* 16:00頃：メンテアウト
+
+---
+## 【本題】本番リリース時に起こったトラブル
+* git cloneが思ったより時間がかかった
+* 一定確率でメンテ画面がエラーになる（その1）
+* 一定確率でメンテ画面がエラーになる（その2）
+
+---
+## git cloneが思ったより時間がかかった
+* 本番と同一ロケーションのステージングサーバでgit cloneした時は10〜15分くらいだったのに、本番だと30分弱かかった
+* 一度に2〜3台ずつgit cloneしようとしたら逆に時間が伸びてしまった（3台同時で90分くらい）
+  * 社内GitLabのトラフィックが詰まった？
+* 1台だけgit cloneしておいて残りはrsyncでよかったかもしれないが未検証だったので実施せず
+  * （文字通り）ぶっつけ本番で実行すると余計悪化する可能性があったため
+* メンテ中にもつれ込んだのでメンテ中もgit cloneしつつ、cap3化していたサーバのみでサービスインしようと目論む
+
+- - -
+## 一定確率でメンテ画面がエラーになる（その1）
+
+メンテ画面のリロードボタンを押すと2〜3回に1回の確率でエラーになる
+
+- - -
+### 原因
+
+* 「13:00〜16:00までメンテナンス中です」みたいなファイルを `/var/www/app/current/public/system/maintenance.json` に置いていたのだが、cap3でデプロイした時にそのファイルが吹っ飛んだ
+* LBにはcap2でメンテ入っているサーバとcap3でメンテ入ってるサーバが混在していたのでエラーになったりならなかったケースが発生
+  * cap3でデプロイしたサーバにアクセスが来た時にエラーになる
+* 再度ファイルを設置することでエラーは解消
+
+---
+## 一定確率でメンテ画面がエラーになる（その2）
+
+メンテ画面のリロードボタンを押すと3〜4回に1回の確率でエラーになる（さっきよりちょい頻度は少ないけどそれでも結構多い）
+
+- - -
+### 事象
+* nginxのエラーログに「SSL_do_handshake() failed (SSL: error:140A1175:SSL routines:SSL_BYTES_TO_CIPHER_LIST:inappropriate fallback) while SSL handshaking」が大量に発生
+  * 普段でもちょいちょい出てるんだけど（1日数十件）、メンテ中のある20分間だけで800件発生
+  * nginxの設定ファイルを更新してたが、改行とコメントアウトの削除くらいしか差分がない
+
+- - -
+* ずっと調べていても時間がかかるだけだったので、cap2に切り戻してリリース作業を継続することに
+  * cap3にしたサーバはLBから切り離してcap2のままのサーバをサービスで使う
+  * ソースコード上はcap3なのでメンテ中にcap2に戻した
+  * config_old/ を config/ に上書きしただけなので切り戻し作業は20分くらい
+
+- - -
+### メンテ翌日の調査
+* `/etc/hosts` を書き換えてLBを通さずにサービスアウトしてた本番のwebサーバに直接リクエスト投げたけどSSL_do_handshakeのエラーは一切発生しなかった
+* webサーバが原因でないことが分かったのでインフラにLBのログを調べてもらった
+
+- - -
+### 原因
+* たまたま古い機種で接続が多かった？（としか思えないとのインフラ回答）
+* cap3と全然関係なかった（つらい）
+
+- - -
+### 結果
+20時頃メンテ開け（4時間延長）
+
+---
+## 【おまけ】先週起こった恐い話
+本番で突然の大量エラーが出てゲームにログインできないので緊急メンテ入れた
+
+- - -
+### 原因のコード
+```ruby
+Rails.cache.fetch(key_name, expires_in: 1.day) do
+  SomeModel.find_by(key: key_name)
+end
+```
+
+* cacheにあればそれを返して、なければブロック内を評価しつつ結果をcacheに保存する
+* この結果が特定のkeyのみ `nil` になってて呼び出し元で `NoMethodError` になってた模様
+
+---
+### 調査
+* DBにはレコードあった
+* cacheのエラーログにも特に何もなかった
+* そうこう調査してるうちに10分くらいでエラーは解消してログイン出来るようになった
+* いまだに原因不明（恐い）
+
+---
+## まとめ
+* でかいリポジトリをcap3移行する場合には全サーバでgit cloneするよりも、1台だけgit cloneしてから他サーバにはrsyncした方がたぶん早い
+* なんかあった時のために切り戻し手順を用意すべき
 
       </script>
     </section>
